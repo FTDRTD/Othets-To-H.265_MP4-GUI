@@ -44,6 +44,7 @@ class VideoConverterGUI:
         monitor_system_theme(self.style, self.root)  # 启动系统夜间模式监听器
 
         self.input_dir = tb.StringVar()
+        self.thread_count = tb.IntVar(value=2)  # 默认2线程
         self.progress = tb.IntVar()
         self.total_files = 0
         self.cancelled = False
@@ -53,6 +54,13 @@ class VideoConverterGUI:
         tb.Label(root, text="选择视频文件夹:", font=("微软雅黑", 12)).pack(pady=(15, 5))
         entry_frame = tb.Frame(root)
         entry_frame.pack(pady=5, fill=X, padx=15)
+
+        # 异步线程数选择
+        thread_frame = tb.Frame(root)
+        thread_frame.pack(pady=5, fill=X, padx=15)
+        tb.Label(thread_frame, text="异步线程数:", font=("微软雅黑", 10)).pack(side=LEFT)
+        tb.Spinbox(thread_frame, from_=1, to=5, textvariable=self.thread_count,
+                  width=5, bootstyle="info").pack(side=LEFT, padx=10)
         self.entry = tb.Entry(entry_frame, textvariable=self.input_dir, bootstyle="info", width=45)
         self.entry.pack(side=LEFT, padx=(0, 10), fill=X, expand=True)
         tb.Button(entry_frame, text="浏览", command=self.browse_directory, bootstyle="info").pack(side=LEFT)
@@ -72,6 +80,10 @@ class VideoConverterGUI:
         # 状态标签
         self.status_label = tb.Label(root, text="等待开始", font=("微软雅黑", 10))
         self.status_label.pack(pady=5)
+        
+        # 硬件加速状态显示
+        self.hw_status_label = tb.Label(root, text="硬件加速: 未开始", font=("微软雅黑", 9))
+        self.hw_status_label.pack(pady=2)
 
         # 绑定输入框变化，控制按钮状态
         self.input_dir.trace_add('write', self.toggle_start_button)
@@ -112,12 +124,22 @@ class VideoConverterGUI:
             self.reset_buttons()
             return
 
+        # 收集视频文件及其大小
         video_files = []
         for root_dir, _, files in os.walk(input_dir):
             for f in files:
                 full_path = os.path.join(root_dir, f)
                 if self.is_video_file(full_path):
-                    video_files.append(full_path)
+                    try:
+                        size = os.path.getsize(full_path)
+                        video_files.append((size, full_path))
+                    except Exception as e:
+                        print(f"获取文件大小失败: {e}")
+                        video_files.append((0, full_path))  # 无法获取大小时默认0
+
+        # 按文件大小升序排序(先处理小文件)
+        video_files.sort(key=lambda x: x[0])
+        video_files = [f[1] for f in video_files]  # 只保留路径
 
         self.total_files = len(video_files)
         if self.total_files == 0:
@@ -137,9 +159,9 @@ class VideoConverterGUI:
         failed = []
         skipped = 0
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        with ThreadPoolExecutor(max_workers=self.thread_count.get()) as executor:
             futures = []
-            for vf in video_files:
+            for vf in video_files:  # 已按大小排序
                 if self._stop_event.is_set():
                     break
                 if not self.is_video_file(vf):
@@ -174,6 +196,30 @@ class VideoConverterGUI:
         self.status_label.config(text=summary)
         self.reset_buttons()
 
+        # 检查并删除源文件（安全版本）
+        if not self.cancelled and success > 0 and len(failed) == 0:
+            if messagebox.askyesno("确认", f"转换完成，是否删除{success}个源文件？"):
+                deleted = 0
+                input_dir = os.path.normpath(self.input_dir.get().strip())
+                for future in futures:
+                    try:
+                        result, input_file = future.result()
+                        if result and os.path.exists(input_file):
+                            # 安全检查：确保文件在输入目录下
+                            file_path = os.path.normpath(input_file)
+                            common_path = os.path.commonpath([input_dir, file_path])
+                            if (common_path == input_dir and
+                                file_path != input_dir and
+                                os.path.dirname(file_path) != input_dir):
+                                try:
+                                    os.remove(input_file)
+                                    deleted += 1
+                                except Exception as e:
+                                    print(f"删除文件失败: {e}")
+                    except Exception as e:
+                        print(f"删除文件错误: {e}")
+                self.status_label.config(text=f"{summary}\n已安全删除{deleted}个源文件")
+
     def convert_single_video(self, input_file, output_dir, log_dir):
         if self._stop_event.is_set():
             return False, input_file
@@ -193,8 +239,35 @@ class VideoConverterGUI:
             os.makedirs(log_dir, exist_ok=True)
 
             # 尝试硬件加速编码
-            cmd = ['ffmpeg', '-hwaccel', 'vulkan', '-i', input_file, '-c:v', 'hevc_amf', '-rc_mode', 'VBR_LATENCY',
-                   '-b:v', bitrate, '-c:a', 'copy', '-f', 'mp4', out_file, '-y']
+            # 尝试各种硬件加速选项
+            hw_accels = ['cuda', 'dxva2', 'qsv', 'd3d11va', 'opencl', 'vulkan']
+            codecs = ['hevc_nvenc', 'hevc_amf', 'hevc_qsv', 'libx265']
+            
+            for hw_accel in hw_accels:
+                for codec in codecs:
+                    try:
+                        # 更新硬件加速状态
+                        self.root.after(0, lambda: self.hw_status_label.config(
+                            text=f"硬件加速: 尝试 {hw_accel} + {codec}"))
+                        
+                        cmd = ['ffmpeg', '-hwaccel', hw_accel, '-i', input_file,
+                              '-c:v', codec, '-rc_mode', 'VBR_LATENCY',
+                              '-b:v', bitrate, '-c:a', 'copy', '-f', 'mp4', out_file, '-y']
+                        result = subprocess.run(cmd, capture_output=True, text=True,
+                                              encoding='utf-8', creationflags=CREATE_NO_WINDOW)
+                        if result.returncode == 0 and os.path.exists(out_file):
+                            # 更新成功使用的硬件加速
+                            self.root.after(0, lambda: self.hw_status_label.config(
+                                text=f"硬件加速: 使用 {hw_accel} + {codec}"))
+                            return True, input_file
+                    except Exception:
+                        continue
+
+            # 所有硬件加速失败后回退到Vulkan
+            self.root.after(0, lambda: self.hw_status_label.config(
+                text="硬件加速: 回退到 Vulkan + 软件编码"))
+            cmd = ['ffmpeg', '-hwaccel', 'vulkan', '-i', input_file, '-c:v', 'libx265',
+                  '-crf', str(crf), '-preset', 'medium', '-c:a', 'copy', '-f', 'mp4', out_file, '-y']
 
             try:
                 result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', creationflags=CREATE_NO_WINDOW)
