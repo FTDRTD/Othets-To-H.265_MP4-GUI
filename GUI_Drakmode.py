@@ -49,6 +49,9 @@ class VideoConverterGUI:
         self.style = tb.Style()  # 初始化样式
         monitor_system_theme(self.style, self.root)  # 启动系统夜间模式监听器
 
+        # 检测显卡类型
+        self.gpu_type = self.detect_gpu()
+
         self.input_dir = tb.StringVar()
         self.thread_count = tb.IntVar(value=2)  # 默认2线程
         self.progress = tb.IntVar()
@@ -265,6 +268,72 @@ class VideoConverterGUI:
                         print(f"删除文件错误: {e}")
                 self.status_label.config(text=f"{summary}\n已安全删除{deleted}个源文件")
 
+    def detect_gpu(self):
+        """检测显卡类型"""
+        # 方法1: 使用dxdiag命令检测
+        try:
+            result = subprocess.run(
+                ["dxdiag", "/t", "dxdiag.txt"],
+                capture_output=True,
+                text=True,
+                creationflags=CREATE_NO_WINDOW,
+                timeout=10,
+            )
+
+            if os.path.exists("dxdiag.txt"):
+                with open("dxdiag.txt", "r", encoding="utf-16") as f:
+                    dxdiag = f.read()
+                os.remove("dxdiag.txt")
+
+                if "NVIDIA" in dxdiag:
+                    self.root.after(
+                        0,
+                        lambda: self.hw_status_label.config(text="检测到显卡: NVIDIA"),
+                    )
+                    return "nvidia"
+                elif "AMD" in dxdiag or "Radeon" in dxdiag:
+                    self.root.after(
+                        0, lambda: self.hw_status_label.config(text="检测到显卡: AMD")
+                    )
+                    return "amd"
+                elif "Intel" in dxdiag:
+                    self.root.after(
+                        0, lambda: self.hw_status_label.config(text="检测到显卡: Intel")
+                    )
+                    return "intel"
+        except Exception as e:
+            print(f"dxdiag检测失败: {e}")
+
+        # 方法2: 使用wmic命令检测
+        try:
+            result = subprocess.run(
+                ["wmic", "path", "win32_VideoController", "get", "name"],
+                capture_output=True,
+                text=True,
+                creationflags=CREATE_NO_WINDOW,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                output = result.stdout
+                if "NVIDIA" in output:
+                    self.root.after(
+                        0,
+                        lambda: self.hw_status_label.config(text="检测到显卡: NVIDIA"),
+                    )
+                    return "nvidia"
+                elif "AMD" in output or "Radeon" in output:
+                    self.root.after(
+                        0, lambda: self.hw_status_label.config(text="检测到显卡: AMD")
+                    )
+                    return "amd"
+                elif "Intel" in output:
+                    self.root.after(
+                        0, lambda: self.hw_status_label.config(text="检测到显卡: Intel")
+                    )
+                    return "intel"
+        except Exception as e:
+            print(f"wmic检测失败: {e}")
+
     def convert_single_video(self, input_file, output_dir, log_dir):
         if self._stop_event.is_set():
             return False, input_file
@@ -286,10 +355,19 @@ class VideoConverterGUI:
             os.makedirs(output_dir, exist_ok=True)
             os.makedirs(log_dir, exist_ok=True)
 
-            # 尝试硬件加速编码
-            # 尝试各种硬件加速选项
-            hw_accels = ["cuda", "dxva2", "qsv", "d3d11va", "opencl", "vulkan"]
-            codecs = ["hevc_nvenc", "hevc_amf", "hevc_qsv", "libx265"]
+            # 根据显卡类型设置默认编码方式
+            if self.gpu_type == "nvidia":
+                hw_accels = ["cuda"]
+                codecs = ["hevc_nvenc"]
+            elif self.gpu_type == "amd":
+                hw_accels = ["d3d11va"]
+                codecs = ["hevc_amf"]
+            elif self.gpu_type == "intel":
+                hw_accels = ["d3d11va"]
+                codecs = ["hevc_qsv"]
+            else:
+                hw_accels = ["vulkan"]
+                codecs = ["libx265"]
 
             for hw_accel in hw_accels:
                 for codec in codecs:
