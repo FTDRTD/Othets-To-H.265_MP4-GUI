@@ -11,18 +11,22 @@ from plyer import notification
 import winreg  # Windows注册表，用于检测系统主题
 
 CREATE_NO_WINDOW = 0x08000000  # 防止弹出控制台窗口
-VALID_EXTENSIONS = {'.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.ts', '.webm'}
+VALID_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".ts", ".webm"}
+
 
 def is_windows_dark_mode():
     try:
         registry = winreg.ConnectRegistry(None, winreg.HKEY_CURRENT_USER)
-        key = winreg.OpenKey(registry, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize')
+        key = winreg.OpenKey(
+            registry, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+        )
         value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
         winreg.CloseKey(key)
         # 0表示暗黑模式启用，1表示浅色模式
         return value == 0
     except Exception:
         return False
+
 
 def monitor_system_theme(style, root, interval=5000):
     def check_and_switch():
@@ -32,7 +36,9 @@ def monitor_system_theme(style, root, interval=5000):
         if current_theme != target_theme:
             style.theme_use(target_theme)
         root.after(interval, check_and_switch)
+
     check_and_switch()
+
 
 class VideoConverterGUI:
     def __init__(self, root):
@@ -58,35 +64,66 @@ class VideoConverterGUI:
         # 异步线程数选择
         thread_frame = tb.Frame(root)
         thread_frame.pack(pady=5, fill=X, padx=15)
-        tb.Label(thread_frame, text="异步线程数:", font=("微软雅黑", 10)).pack(side=LEFT)
-        tb.Spinbox(thread_frame, from_=1, to=5, textvariable=self.thread_count,
-                  width=5, bootstyle="info").pack(side=LEFT, padx=10)
-        self.entry = tb.Entry(entry_frame, textvariable=self.input_dir, bootstyle="info", width=45)
+        tb.Label(thread_frame, text="异步线程数:", font=("微软雅黑", 10)).pack(
+            side=LEFT
+        )
+        tb.Spinbox(
+            thread_frame,
+            from_=1,
+            to=5,
+            textvariable=self.thread_count,
+            width=5,
+            bootstyle="info",
+        ).pack(side=LEFT, padx=10)
+        self.entry = tb.Entry(
+            entry_frame, textvariable=self.input_dir, bootstyle="info", width=45
+        )
         self.entry.pack(side=LEFT, padx=(0, 10), fill=X, expand=True)
-        tb.Button(entry_frame, text="浏览", command=self.browse_directory, bootstyle="info").pack(side=LEFT)
+        tb.Button(
+            entry_frame, text="浏览", command=self.browse_directory, bootstyle="info"
+        ).pack(side=LEFT)
 
         # 开始和取消按钮
         btn_frame = tb.Frame(root)
         btn_frame.pack(pady=20)
-        self.start_btn = tb.Button(btn_frame, text="开始转换", command=self.start_conversion_thread, bootstyle="success")
+        self.start_btn = tb.Button(
+            btn_frame,
+            text="开始转换",
+            command=self.start_conversion_thread,
+            bootstyle="success",
+        )
         self.start_btn.pack(side=LEFT, padx=10)
-        self.cancel_btn = tb.Button(btn_frame, text="取消", command=self.cancel_conversion, bootstyle="danger", state=DISABLED)
+        self.cancel_btn = tb.Button(
+            btn_frame,
+            text="取消",
+            command=self.cancel_conversion,
+            bootstyle="danger",
+            state=DISABLED,
+        )
         self.cancel_btn.pack(side=LEFT, padx=10)
 
         # 进度条
-        self.progress_bar = tb.Progressbar(root, orient='horizontal', length=480, mode='determinate', variable=self.progress)
+        self.progress_bar = tb.Progressbar(
+            root,
+            orient="horizontal",
+            length=480,
+            mode="determinate",
+            variable=self.progress,
+        )
         self.progress_bar.pack(pady=10, padx=15)
 
         # 状态标签
         self.status_label = tb.Label(root, text="等待开始", font=("微软雅黑", 10))
         self.status_label.pack(pady=5)
-        
+
         # 硬件加速状态显示
-        self.hw_status_label = tb.Label(root, text="硬件加速: 未开始", font=("微软雅黑", 9))
+        self.hw_status_label = tb.Label(
+            root, text="硬件加速: 未开始", font=("微软雅黑", 9)
+        )
         self.hw_status_label.pack(pady=2)
 
         # 绑定输入框变化，控制按钮状态
-        self.input_dir.trace_add('write', self.toggle_start_button)
+        self.input_dir.trace_add("write", self.toggle_start_button)
 
     def browse_directory(self):
         path = filedialog.askdirectory()
@@ -147,11 +184,11 @@ class VideoConverterGUI:
             self.reset_buttons()
             return
 
-        self.progress_bar['maximum'] = self.total_files
+        self.progress_bar["maximum"] = self.total_files
         self.status_label.config(text=f"准备转换 {self.total_files} 个文件")
 
-        output_dir = os.path.join(input_dir, 'Converted')
-        log_dir = os.path.join(input_dir, 'Logs')
+        output_dir = os.path.join(input_dir, "Converted")
+        log_dir = os.path.join(input_dir, "Logs")
         os.makedirs(output_dir, exist_ok=True)
         os.makedirs(log_dir, exist_ok=True)
 
@@ -167,7 +204,9 @@ class VideoConverterGUI:
                 if not self.is_video_file(vf):
                     skipped += 1
                     continue
-                futures.append(executor.submit(self.convert_single_video, vf, output_dir, log_dir))
+                futures.append(
+                    executor.submit(self.convert_single_video, vf, output_dir, log_dir)
+                )
 
             for idx, future in enumerate(as_completed(futures), 1):
                 if self._stop_event.is_set():
@@ -180,9 +219,11 @@ class VideoConverterGUI:
                         failed.append(input_file)
                 except Exception as e:
                     failed.append(f"Error processing file: {str(e)}")
-                
+
                 self.progress.set(success + len(failed))
-                self.status_label.config(text=f"处理文件 {success + len(failed)}/{self.total_files} (跳过 {skipped})")
+                self.status_label.config(
+                    text=f"处理文件 {success + len(failed)}/{self.total_files} (跳过 {skipped})"
+                )
 
         if self.cancelled:
             summary = f"转换已取消：完成 {success}/{self.total_files} (跳过 {skipped})"
@@ -191,7 +232,9 @@ class VideoConverterGUI:
             if failed:
                 summary += f"\n失败示例：{', '.join([os.path.basename(f) if isinstance(f, str) and os.path.exists(f) else f for f in failed[:3]])} 等"
 
-        notification.notify(title="视频转换器", message=summary, app_name="Video Converter", timeout=10)
+        notification.notify(
+            title="视频转换器", message=summary, app_name="Video Converter", timeout=10
+        )
 
         self.status_label.config(text=summary)
         self.reset_buttons()
@@ -208,9 +251,11 @@ class VideoConverterGUI:
                             # 安全检查：确保文件在输入目录下
                             file_path = os.path.normpath(input_file)
                             common_path = os.path.commonpath([input_dir, file_path])
-                            if (common_path == input_dir and
-                                file_path != input_dir and
-                                os.path.dirname(file_path) != input_dir):
+                            if (
+                                common_path == input_dir
+                                and file_path != input_dir
+                                and os.path.dirname(file_path) != input_dir
+                            ):
                                 try:
                                     os.remove(input_file)
                                     deleted += 1
@@ -232,55 +277,139 @@ class VideoConverterGUI:
             bitrate, crf = self.get_adaptive_params(width, height, framerate)
 
             base_name = os.path.splitext(os.path.basename(input_file))[0]
-            out_file = os.path.join(output_dir, base_name + '_hevc.mp4')
-            log_file = os.path.join(log_dir, base_name + f"_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+            out_file = os.path.join(output_dir, base_name + "_hevc.mp4")
+            log_file = os.path.join(
+                log_dir,
+                base_name + f"_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+            )
 
             os.makedirs(output_dir, exist_ok=True)
             os.makedirs(log_dir, exist_ok=True)
 
             # 尝试硬件加速编码
             # 尝试各种硬件加速选项
-            hw_accels = ['cuda', 'dxva2', 'qsv', 'd3d11va', 'opencl', 'vulkan']
-            codecs = ['hevc_nvenc', 'hevc_amf', 'hevc_qsv', 'libx265']
-            
+            hw_accels = ["cuda", "dxva2", "qsv", "d3d11va", "opencl", "vulkan"]
+            codecs = ["hevc_nvenc", "hevc_amf", "hevc_qsv", "libx265"]
+
             for hw_accel in hw_accels:
                 for codec in codecs:
                     try:
                         # 更新硬件加速状态
-                        self.root.after(0, lambda: self.hw_status_label.config(
-                            text=f"硬件加速: 尝试 {hw_accel} + {codec}"))
-                        
-                        cmd = ['ffmpeg', '-hwaccel', hw_accel, '-i', input_file,
-                              '-c:v', codec, '-rc_mode', 'VBR_LATENCY',
-                              '-b:v', bitrate, '-c:a', 'copy', '-f', 'mp4', out_file, '-y']
-                        result = subprocess.run(cmd, capture_output=True, text=True,
-                                              encoding='utf-8', creationflags=CREATE_NO_WINDOW)
+                        self.root.after(
+                            0,
+                            lambda: self.hw_status_label.config(
+                                text=f"硬件加速: 尝试 {hw_accel} + {codec}"
+                            ),
+                        )
+
+                        cmd = [
+                            "ffmpeg",
+                            "-hwaccel",
+                            hw_accel,
+                            "-i",
+                            input_file,
+                            "-c:v",
+                            codec,
+                            "-rc_mode",
+                            "VBR_LATENCY",
+                            "-b:v",
+                            bitrate,
+                            "-c:a",
+                            "copy",
+                            "-f",
+                            "mp4",
+                            out_file,
+                            "-y",
+                        ]
+                        result = subprocess.run(
+                            cmd,
+                            capture_output=True,
+                            text=True,
+                            encoding="utf-8",
+                            creationflags=CREATE_NO_WINDOW,
+                        )
                         if result.returncode == 0 and os.path.exists(out_file):
                             # 更新成功使用的硬件加速
-                            self.root.after(0, lambda: self.hw_status_label.config(
-                                text=f"硬件加速: 使用 {hw_accel} + {codec}"))
+                            self.root.after(
+                                0,
+                                lambda: self.hw_status_label.config(
+                                    text=f"硬件加速: 使用 {hw_accel} + {codec}"
+                                ),
+                            )
                             return True, input_file
                     except Exception:
                         continue
 
             # 所有硬件加速失败后回退到Vulkan
-            self.root.after(0, lambda: self.hw_status_label.config(
-                text="硬件加速: 回退到 Vulkan + 软件编码"))
-            cmd = ['ffmpeg', '-hwaccel', 'vulkan', '-i', input_file, '-c:v', 'libx265',
-                  '-crf', str(crf), '-preset', 'medium', '-c:a', 'copy', '-f', 'mp4', out_file, '-y']
+            self.root.after(
+                0,
+                lambda: self.hw_status_label.config(
+                    text="硬件加速: 回退到 Vulkan + 软件编码"
+                ),
+            )
+            cmd = [
+                "ffmpeg",
+                "-hwaccel",
+                "vulkan",
+                "-i",
+                input_file,
+                "-c:v",
+                "libx265",
+                "-crf",
+                str(crf),
+                "-preset",
+                "medium",
+                "-c:a",
+                "copy",
+                "-f",
+                "mp4",
+                out_file,
+                "-y",
+            ]
 
             try:
-                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', creationflags=CREATE_NO_WINDOW)
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    creationflags=CREATE_NO_WINDOW,
+                )
                 if result.returncode == 0 and os.path.exists(out_file):
                     return True, input_file
             except Exception as e:
                 print(f"硬件编码失败: {e}")
 
             # 软件编码fallback
-            cmd = ['ffmpeg', '-hwaccel', 'vulkan', '-i', input_file, '-vf', 'scale_vulkan', '-c:v', 'libx265',
-                   '-crf', str(crf), '-preset', 'medium', '-c:a', 'copy', '-f', 'mp4', out_file, '-y']
+            cmd = [
+                "ffmpeg",
+                "-hwaccel",
+                "vulkan",
+                "-i",
+                input_file,
+                "-vf",
+                "scale_vulkan",
+                "-c:v",
+                "libx265",
+                "-crf",
+                str(crf),
+                "-preset",
+                "medium",
+                "-c:a",
+                "copy",
+                "-f",
+                "mp4",
+                out_file,
+                "-y",
+            ]
             try:
-                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', creationflags=CREATE_NO_WINDOW)
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    creationflags=CREATE_NO_WINDOW,
+                )
                 return (result.returncode == 0 and os.path.exists(out_file)), input_file
             except Exception as e:
                 print(f"软件编码失败: {e}")
@@ -293,27 +422,53 @@ class VideoConverterGUI:
         try:
             if not os.path.exists(path):
                 return False
-                
+
             ext = os.path.splitext(path)[1].lower()
             if ext not in VALID_EXTENSIONS:
                 return False
-                
-            result = subprocess.run(['ffprobe', '-v', 'error', '-show_streams', '-select_streams', 'v:0', path],
-                                    capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
-            return result.returncode == 0 and 'codec_type=video' in result.stdout
+
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_streams",
+                    "-select_streams",
+                    "v:0",
+                    path,
+                ],
+                capture_output=True,
+                text=True,
+                creationflags=CREATE_NO_WINDOW,
+            )
+            return result.returncode == 0 and "codec_type=video" in result.stdout
         except Exception as e:
             print(f"视频文件验证失败: {e}")
             return False
 
     def get_video_info(self, path):
         try:
-            result = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
-                                     '-show_entries', 'stream=width,height,r_frame_rate',
-                                     '-of', 'json', path], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=width,height,r_frame_rate",
+                    "-of",
+                    "json",
+                    path,
+                ],
+                capture_output=True,
+                text=True,
+                creationflags=CREATE_NO_WINDOW,
+            )
             info = json.loads(result.stdout)
-            w = info['streams'][0]['width']
-            h = info['streams'][0]['height']
-            fr_str = info['streams'][0]['r_frame_rate']
+            w = info["streams"][0]["width"]
+            h = info["streams"][0]["height"]
+            fr_str = info["streams"][0]["r_frame_rate"]
             fr = eval(fr_str)
             return w, h, fr
         except:
@@ -344,11 +499,16 @@ class VideoConverterGUI:
         self.root.after(0, lambda: messagebox.showerror("错误", msg))
 
     def reset_buttons(self):
-        self.root.after(0, lambda: self.start_btn.config(state=NORMAL if self.input_dir.get().strip() else DISABLED))
+        self.root.after(
+            0,
+            lambda: self.start_btn.config(
+                state=NORMAL if self.input_dir.get().strip() else DISABLED
+            ),
+        )
         self.root.after(0, lambda: self.cancel_btn.config(state=DISABLED))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     root = tb.Window(title="视频批量转换器", themename="flatly")  # 初始浅色主题
     app = VideoConverterGUI(root)
     root.mainloop()
