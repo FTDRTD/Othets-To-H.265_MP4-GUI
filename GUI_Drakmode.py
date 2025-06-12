@@ -135,32 +135,39 @@ class VideoConverterGUI:
 
         success = 0
         failed = []
+        skipped = 0
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             futures = []
             for vf in video_files:
                 if self._stop_event.is_set():
                     break
+                if not self.is_video_file(vf):
+                    skipped += 1
+                    continue
                 futures.append(executor.submit(self.convert_single_video, vf, output_dir, log_dir))
 
             for idx, future in enumerate(as_completed(futures), 1):
                 if self._stop_event.is_set():
                     break
-                result, input_file = future.result()
-                if result:
-                    success += 1
-                else:
-                    failed.append(input_file)
-
-                self.progress.set(idx)
-                self.status_label.config(text=f"处理文件 {idx}/{self.total_files}")
+                try:
+                    result, input_file = future.result()
+                    if result:
+                        success += 1
+                    else:
+                        failed.append(input_file)
+                except Exception as e:
+                    failed.append(f"Error processing file: {str(e)}")
+                
+                self.progress.set(success + len(failed))
+                self.status_label.config(text=f"处理文件 {success + len(failed)}/{self.total_files} (跳过 {skipped})")
 
         if self.cancelled:
-            summary = f"转换已取消：完成 {success}/{self.total_files}"
+            summary = f"转换已取消：完成 {success}/{self.total_files} (跳过 {skipped})"
         else:
-            summary = f"转换完成：成功 {success}/{self.total_files}，失败 {len(failed)}"
+            summary = f"转换完成：成功 {success}/{self.total_files}，失败 {len(failed)}，跳过 {skipped}"
             if failed:
-                summary += f"\n失败示例：{', '.join([os.path.basename(f) for f in failed[:3]])} 等"
+                summary += f"\n失败示例：{', '.join([os.path.basename(f) if isinstance(f, str) and os.path.exists(f) else f for f in failed[:3]])} 等"
 
         notification.notify(title="视频转换器", message=summary, app_name="Video Converter", timeout=10)
 
@@ -171,45 +178,58 @@ class VideoConverterGUI:
         if self._stop_event.is_set():
             return False, input_file
 
-        width, height, framerate = self.get_video_info(input_file)
-        bitrate, crf = self.get_adaptive_params(width, height, framerate)
-
-        base_name = os.path.splitext(os.path.basename(input_file))[0]
-        out_file = os.path.join(output_dir, base_name + '_hevc.mp4')
-        log_file = os.path.join(log_dir, base_name + f"_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
-
-        os.makedirs(output_dir, exist_ok=True)
-        os.makedirs(log_dir, exist_ok=True)
-
-        # 尝试硬件加速编码
-        cmd = ['ffmpeg', '-hwaccel', 'vulkan', '-i', input_file, '-c:v', 'hevc_amf', '-rc_mode', 'VBR_LATENCY',
-               '-b:v', bitrate, '-c:a', 'copy', '-f', 'mp4', out_file, '-y']
-
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', creationflags=CREATE_NO_WINDOW)
-            if result.returncode == 0 and os.path.exists(out_file):
-                return True, input_file
-        except:
-            pass
+            if not self.is_video_file(input_file):
+                return False, input_file
 
-        # 软件编码fallback
-        cmd = ['ffmpeg', '-hwaccel', 'vulkan', '-i', input_file, '-vf', 'scale_vulkan', '-c:v', 'libx265',
-               '-crf', str(crf), '-preset', 'medium', '-c:a', 'copy', '-f', 'mp4', out_file, '-y']
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', creationflags=CREATE_NO_WINDOW)
-            return (result.returncode == 0 and os.path.exists(out_file)), input_file
-        except:
+            width, height, framerate = self.get_video_info(input_file)
+            bitrate, crf = self.get_adaptive_params(width, height, framerate)
+
+            base_name = os.path.splitext(os.path.basename(input_file))[0]
+            out_file = os.path.join(output_dir, base_name + '_hevc.mp4')
+            log_file = os.path.join(log_dir, base_name + f"_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+
+            os.makedirs(output_dir, exist_ok=True)
+            os.makedirs(log_dir, exist_ok=True)
+
+            # 尝试硬件加速编码
+            cmd = ['ffmpeg', '-hwaccel', 'vulkan', '-i', input_file, '-c:v', 'hevc_amf', '-rc_mode', 'VBR_LATENCY',
+                   '-b:v', bitrate, '-c:a', 'copy', '-f', 'mp4', out_file, '-y']
+
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', creationflags=CREATE_NO_WINDOW)
+                if result.returncode == 0 and os.path.exists(out_file):
+                    return True, input_file
+            except Exception as e:
+                print(f"硬件编码失败: {e}")
+
+            # 软件编码fallback
+            cmd = ['ffmpeg', '-hwaccel', 'vulkan', '-i', input_file, '-vf', 'scale_vulkan', '-c:v', 'libx265',
+                   '-crf', str(crf), '-preset', 'medium', '-c:a', 'copy', '-f', 'mp4', out_file, '-y']
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', creationflags=CREATE_NO_WINDOW)
+                return (result.returncode == 0 and os.path.exists(out_file)), input_file
+            except Exception as e:
+                print(f"软件编码失败: {e}")
+                return False, input_file
+        except Exception as e:
+            print(f"转换过程中出错: {e}")
             return False, input_file
 
     def is_video_file(self, path):
-        ext = os.path.splitext(path)[1].lower()
-        if ext not in VALID_EXTENSIONS:
-            return False
         try:
+            if not os.path.exists(path):
+                return False
+                
+            ext = os.path.splitext(path)[1].lower()
+            if ext not in VALID_EXTENSIONS:
+                return False
+                
             result = subprocess.run(['ffprobe', '-v', 'error', '-show_streams', '-select_streams', 'v:0', path],
                                     capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
-            return 'codec_type=video' in result.stdout
-        except:
+            return result.returncode == 0 and 'codec_type=video' in result.stdout
+        except Exception as e:
+            print(f"视频文件验证失败: {e}")
             return False
 
     def get_video_info(self, path):
