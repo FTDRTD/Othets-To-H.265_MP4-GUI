@@ -334,6 +334,69 @@ class VideoConverterGUI:
         except Exception as e:
             print(f"wmic检测失败: {e}")
 
+    def verify_conversion(self, input_file, output_file):
+        """验证转换是否成功完成"""
+        try:
+            # 检查输出文件是否存在且大小合理
+            if not os.path.exists(output_file):
+                return False
+
+            input_size = os.path.getsize(input_file)
+            output_size = os.path.getsize(output_file)
+
+            # 输出文件不应为0且不应小于输入文件的10%
+            if output_size == 0 or output_size < input_size * 0.1:
+                return False
+
+            # 检查视频时长是否匹配
+            def get_duration(file):
+                cmd = [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    file,
+                ]
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
+                )
+                if result.returncode == 0:
+                    return float(result.stdout.strip())
+                return 0
+
+            input_duration = get_duration(input_file)
+            output_duration = get_duration(output_file)
+
+            # 允许1秒的误差
+            if abs(input_duration - output_duration) > 1:
+                return False
+
+            # 检查编解码器是否为H.265
+            cmd = [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=codec_name",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                output_file,
+            ]
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
+            )
+            if result.returncode != 0 or "hevc" not in result.stdout.lower():
+                return False
+
+            return True
+        except Exception:
+            return False
+
     def convert_single_video(self, input_file, output_dir, log_dir):
         if self._stop_event.is_set():
             return False, input_file
@@ -406,7 +469,11 @@ class VideoConverterGUI:
                             encoding="utf-8",
                             creationflags=CREATE_NO_WINDOW,
                         )
-                        if result.returncode == 0 and os.path.exists(out_file):
+                        if (
+                            result.returncode == 0
+                            and os.path.exists(out_file)
+                            and self.verify_conversion(input_file, out_file)
+                        ):
                             # 更新成功使用的硬件加速
                             self.root.after(
                                 0,

@@ -1,7 +1,7 @@
 ------------------
 System Information
 ------------------
-      Time of this report: 6/12/2025, 17:42:02
+      Time of this report: 6/20/2025, 15:36:06
              Machine name: MY-WINDOWS10
                Machine Id: {1427D0C4-3AF8-409B-B981-C2563BE4C426}
          Operating System: Windows 10 IoT 企业版 LTSC 64-bit (10.0, Build 19044) (19041.vb_release.191206-1406)
@@ -12,7 +12,7 @@ System Information
                 Processor: AMD Ryzen 5 5600 6-Core Processor               (12 CPUs), ~3.5GHz
                    Memory: 32768MB RAM
       Available OS Memory: 32678MB RAM
-                Page File: 20994MB used, 16803MB available
+                Page File: 21256MB used, 17565MB available
               Windows Dir: C:\Windows
           DirectX Version: DirectX 12
       DX Setup Parameters: Not found
@@ -669,6 +669,9 @@ Realtek HDA SPDIF Out,0x00200000,1,1,ksproxy.ax,10.00.19041.5794
 Realtek HD Audio output,0x00200000,1,1,ksproxy.ax,10.00.19041.5794
 ,0x00000000,0,0,,
 ,0x00000000,0,0,,
+
+Video Capture Sources:
+OBS Virtual Camera,0x00200000,0,1,obs-virtualcam-module64.dll,31.00.0003.0000
 
 WDM Streaming Communication Transforms:
 Tee/Sink-to-Sink 转换程序,0x00200000,1,1,ksproxy.ax,10.00.19041.5794
